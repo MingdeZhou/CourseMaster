@@ -1,0 +1,12 @@
+{
+  "appId": "com.example.desktopshell",
+  "productName": "Desktop App Shell",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "package.json"
+  ]
+}
