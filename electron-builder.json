@@ -1,6 +1,6 @@
 {
-  "appId": "com.coursemaster.workspace",
-  "productName": "Workspace",
+  "appId": "com.coursemaster.app",
+  "productName": "CourseMaster",
   "directories": {
     "output": "release"
   },
@@ -21,6 +21,6 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "artifactName": "Workspace-Setup-${version}.${ext}"
+    "artifactName": "CourseMaster-Setup-${version}.${ext}"
   }
 }

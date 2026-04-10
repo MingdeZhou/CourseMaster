@@ -1,8 +1,8 @@
 {
-  "name": "local-file-demo",
+  "name": "coursemaster",
   "version": "0.1.0",
   "private": true,
-  "description": "Workspace desktop app for course and item management.",
+  "description": "CourseMaster desktop app for course and item management.",
   "author": "Codex",
   "main": "dist-electron/main.js",
   "scripts": {

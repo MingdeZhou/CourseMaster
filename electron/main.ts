@@ -20,7 +20,7 @@ function createWindow() {
     height: 760,
     minWidth: 900,
     minHeight: 600,
-    title: "Workspace",
+    title: "CourseMaster",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
