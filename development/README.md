@@ -44,6 +44,8 @@ Workspace
 - 课程层不再显示 `Add a new item` 这样的占位行。
 - 根层和课程层都改为使用小号 `Add Folder` 按钮触发创建。
 - 顶部导航文案统一采用首字母大写：`Workspace`、`Back`、`Courses`、`Items`。
+- 数据不再只存在前端内存中，已改为通过 Electron IPC 读写本地 JSON。
+- Windows 打包配置已从通用壳模板改为当前项目专用配置。
 
 ## 当前界面方向
 
@@ -61,6 +63,7 @@ Workspace
 - 整体视觉方向为简约、克制、留白充足。
 - 新建按钮固定在标题栏下方。
 - 新建输入框只会在点击 `Add Folder` 后临时出现在列表最上方，创建完成或取消后不会保留空白占位。
+- Item 详情页已改为真正可编辑的 `Pipeline` 与 `Package` 双卡片结构。
 
 ## 当前已实现功能
 
@@ -84,6 +87,17 @@ Workspace
 - 详情页中已显示 `package` 按钮。
 - 从详情页可返回 item 列表。
 
+### Milestone 4：Pipeline 可编辑与保存
+
+- `Pipeline` 已改为可编辑表单，不再是占位内容。
+- 当前包含三个输入区块：`Due Date`、`Submission Link`、`Others`。
+- 每个输入区块都使用自适应高度文本框。
+- 文本框支持回车换行扩展内容。
+- 文本框按 `Esc` 会退出当前输入焦点。
+- 输入内容会自动保存到本地 JSON。
+- 返回上一层前会主动刷新一次待保存内容，避免刚输入的内容丢失。
+- 重启应用后，之前输入的内容仍可重新加载。
+
 ### 当前新增的交互能力
 
 - `workspace` 页面支持 `add folder`，用于新增课程。
@@ -91,6 +105,9 @@ Workspace
 - 初始化时不再显示任何默认课程或默认 item。
 - `Add Folder` 按钮固定显示在标题栏下方。
 - 创建输入框只在创建态出现，位置位于列表最上方；创建完成后不再保留空行。
+- 课程、新建 item、重命名、删除都已接入本地 JSON 持久化，不再只修改前端状态。
+- 应用启动时会自动从本地 JSON 加载课程与 item 数据。
+- 本地 JSON 存放在 Electron `userData` 目录下的 `app-data.json`。
 - 右键任意课程会弹出虚拟文件夹菜单。
 - 右键任意 item 会弹出虚拟文件夹菜单。
 - 右键菜单当前包含：`重命名`、`删除`。
@@ -104,26 +121,36 @@ Workspace
 - 新建 course 不再自动命名为 `course3` 这类默认名称，而是先进入固定位置的行内输入状态，让用户直接输入名称。
 - 新建 item 也采用相同的固定位置行内输入模式。
 - 返回入口已从单独的左箭头改为带边框的 `Back` 按钮。
+- `Pipeline` 卡片会显示当前 item 名称与保存状态。
+- `Pipeline` 的 `Due Date`、`Submission Link`、`Others` 已支持自动保存。
+- `Package` 卡片中的 `Material Links` 已支持自动保存。
+- `Package` 卡片中的 `Files` 区块已接通真实本地文件夹。
+- 点击 `Open Folder` 或 `Files` 区块时，会自动创建并打开该 item 对应的真实文件夹。
+- 真实文件夹默认放在用户 `Documents/CourseMasterWorkspace/<course-id>/<item-id>` 下。
+- 如果该文件夹里已有内容，界面会抓取前 5 个文件名纵向显示。
+- 已增加 Windows 桌面打包脚本 `npm run package`。
+- 打包配置已设置为生成 `NSIS` 安装包和 `win-unpacked` 目录。
+- 为适配本地开发机权限环境，Windows 打包已关闭 `signAndEditExecutable`，避免 `winCodeSign` 解压符号链接时报错。
 
 ## 当前尚未实现
 
-### Milestone 4：Pipeline 可编辑与保存
+### Milestone 5：打包为桌面应用
 
-- `pipeline` 还不是可编辑文本区域。
-- `pipeline` 内容尚未持久化。
-
-### Milestone 5：Package 自动创建并打开
-
-- `package` 按钮目前仅为界面占位。
-- 尚未创建真实本地文件夹。
-- 尚未打开系统资源管理器。
-- 尚未保存或复用 `packagePath`。
+- 打包链路已经接通，但仍未加入自定义应用图标。
+- 当前使用默认 Electron 图标。
 
 ### 数据层
 
-- 目前仍使用前端内置示例数据。
-- 尚未接入本地 JSON 读写。
-- 尚未通过 IPC 加载真实 workspace 数据。
+- 已接入本地 JSON 读写。
+- 已通过 IPC 加载和更新真实 workspace 数据。
+- 当前数据模型已经扩展到：
+  - `course` / `item` 基础信息
+  - `dueDate`
+  - `submissionLink`
+  - `others`
+  - `materialLinks`
+  - `packagePath`
+- 还没有拆成更复杂的结构化 Pipeline section 数据模型。
 
 ## 后续记录要求
 

@@ -1,5 +1,16 @@
-import { app, BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu, ipcMain } from "electron";
 import path from "node:path";
+import {
+  createCourseData,
+  createItemData,
+  deleteCourseData,
+  deleteItemData,
+  loadWorkspaceData,
+  openPackageFolder,
+  renameCourseData,
+  renameItemData,
+  saveItemDraftData
+} from "./workspaceStore";
 
 const isDev = !app.isPackaged;
 
@@ -40,6 +51,29 @@ function createWindow() {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  ipcMain.handle("workspace:load", () => loadWorkspaceData());
+  ipcMain.handle("course:create", (_event, name: string) => createCourseData(name));
+  ipcMain.handle("item:create", (_event, courseId: string, name: string) =>
+    createItemData(courseId, name)
+  );
+  ipcMain.handle("course:rename", (_event, courseId: string, name: string) =>
+    renameCourseData(courseId, name)
+  );
+  ipcMain.handle("item:rename", (_event, courseId: string, itemId: string, name: string) =>
+    renameItemData(courseId, itemId, name)
+  );
+  ipcMain.handle("course:delete", (_event, courseId: string) => deleteCourseData(courseId));
+  ipcMain.handle("item:delete", (_event, courseId: string, itemId: string) =>
+    deleteItemData(courseId, itemId)
+  );
+  ipcMain.handle(
+    "item:saveDraft",
+    (_event, courseId: string, itemId: string, draft: Parameters<typeof saveItemDraftData>[2]) =>
+      saveItemDraftData(courseId, itemId, draft)
+  );
+  ipcMain.handle("package:open", (_event, courseId: string, itemId: string) =>
+    openPackageFolder(courseId, itemId)
+  );
   createWindow();
 
   app.on("activate", () => {

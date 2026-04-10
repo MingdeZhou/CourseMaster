@@ -1,18 +1,4 @@
-import { useEffect, useState } from "react";
-
-type Item = {
-  id: string;
-  name: string;
-  pipelinePreview: string;
-};
-
-type Course = {
-  id: string;
-  name: string;
-  items: Item[];
-};
-
-const demoCourses: Course[] = [];
+import { useEffect, useRef, useState } from "react";
 
 type Screen = "workspace" | "items" | "detail";
 type ContextMenuState =
@@ -43,9 +29,66 @@ type DeleteState =
       name: string;
     }
   | null;
+type DetailDraft = ItemDraftPayload;
+type SaveState = "idle" | "saving" | "saved" | "error";
+
+function getDetailDraft(item: WorkspaceItem): DetailDraft {
+  return {
+    dueDate: item.dueDate,
+    submissionLink: item.submissionLink,
+    others: item.others,
+    materialLinks: item.materialLinks
+  };
+}
+
+function AutoGrowField({
+  label,
+  value,
+  placeholder,
+  onChange,
+  onCommit
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.style.height = "0px";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <label className="detail-field">
+      <span className="detail-field-label">{label}</span>
+      <textarea
+        ref={textareaRef}
+        className="detail-textarea"
+        value={value}
+        rows={1}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.currentTarget.blur();
+          }
+        }}
+      />
+    </label>
+  );
+}
 
 function App() {
-  const [courses, setCourses] = useState<Course[]>(demoCourses);
+  const [courses, setCourses] = useState<WorkspaceCourse[]>([]);
   const [screen, setScreen] = useState<Screen>("workspace");
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -53,10 +96,49 @@ function App() {
   const [renameState, setRenameState] = useState<RenameState>(null);
   const [createState, setCreateState] = useState<CreateState>(null);
   const [deleteState, setDeleteState] = useState<DeleteState>(null);
+  const [detailDraft, setDetailDraft] = useState<DetailDraft | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [screenMessage, setScreenMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const saveTimerRef = useRef<number | null>(null);
+  const draftRef = useRef<DetailDraft | null>(null);
+  const selectedCourseIdRef = useRef<string | null>(null);
+  const selectedItemIdRef = useRef<string | null>(null);
+  const screenRef = useRef<Screen>("workspace");
+  const isSubmittingCreateRef = useRef(false);
+  const isSubmittingRenameRef = useRef(false);
+
   const selectedCourse =
     courses.find((course) => course.id === selectedCourseId) ?? null;
   const selectedItem =
     selectedCourse?.items.find((item) => item.id === selectedItemId) ?? null;
+
+  useEffect(() => {
+    selectedCourseIdRef.current = selectedCourseId;
+  }, [selectedCourseId]);
+
+  useEffect(() => {
+    selectedItemIdRef.current = selectedItemId;
+  }, [selectedItemId]);
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
+    draftRef.current = detailDraft;
+  }, [detailDraft]);
+
+  useEffect(() => {
+    void loadWorkspace();
+
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!contextMenu) {
@@ -100,13 +182,81 @@ function App() {
     };
   }, [deleteState]);
 
-  function openItems(courseId: string) {
-    setSelectedCourseId(courseId);
-    setSelectedItemId(null);
+  useEffect(() => {
+    if (!selectedItem) {
+      setDetailDraft(null);
+      setSaveState("idle");
+      return;
+    }
+
+    setDetailDraft(getDetailDraft(selectedItem));
+    setSaveState("idle");
+  }, [selectedCourseId, selectedItemId]);
+
+  function applyWorkspace(nextWorkspace: WorkspaceData) {
+    setCourses(nextWorkspace.courses);
+
+    const currentCourse = nextWorkspace.courses.find(
+      (course) => course.id === selectedCourseIdRef.current
+    );
+
+    if (!currentCourse) {
+      if (selectedCourseIdRef.current) {
+        setSelectedCourseId(null);
+      }
+
+      if (selectedItemIdRef.current) {
+        setSelectedItemId(null);
+      }
+
+      if (screenRef.current !== "workspace") {
+        setScreen("workspace");
+      }
+
+      return;
+    }
+
+    const currentItem = currentCourse.items.find(
+      (item) => item.id === selectedItemIdRef.current
+    );
+
+    if (!currentItem && selectedItemIdRef.current) {
+      setSelectedItemId(null);
+
+      if (screenRef.current === "detail") {
+        setScreen("items");
+      }
+    }
+  }
+
+  async function loadWorkspace() {
+    setIsLoading(true);
+    setScreenMessage(null);
+
+    try {
+      const nextWorkspace = await window.appBridge.loadWorkspace();
+      applyWorkspace(nextWorkspace);
+    } catch (error) {
+      setScreenMessage(
+        error instanceof Error ? error.message : "加载本地数据失败，请稍后重试。"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function clearTransientStates() {
     setContextMenu(null);
     setRenameState(null);
     setCreateState(null);
     setDeleteState(null);
+  }
+
+  function openItems(courseId: string) {
+    clearTransientStates();
+    setSelectedCourseId(courseId);
+    setSelectedItemId(null);
+    setScreenMessage(null);
     setScreen("items");
   }
 
@@ -115,45 +265,70 @@ function App() {
       return;
     }
 
+    clearTransientStates();
     setSelectedItemId(itemId);
-    setContextMenu(null);
-    setRenameState(null);
-    setCreateState(null);
-    setDeleteState(null);
+    setScreenMessage(null);
     setScreen("detail");
   }
 
-  function goBack() {
+  async function flushDraftSave() {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const currentCourseId = selectedCourseIdRef.current;
+    const currentItemId = selectedItemIdRef.current;
+    const currentDraft = draftRef.current;
+
+    if (!currentCourseId || !currentItemId || !currentDraft) {
+      return;
+    }
+
+    try {
+      const nextWorkspace = await window.appBridge.saveItemDraft(
+        currentCourseId,
+        currentItemId,
+        currentDraft
+      );
+      applyWorkspace(nextWorkspace);
+      setSaveState("saved");
+    } catch (error) {
+      setSaveState("error");
+      setScreenMessage(
+        error instanceof Error ? error.message : "保存 Pipeline 失败，请稍后重试。"
+      );
+    }
+  }
+
+  async function goBack() {
+    await flushDraftSave();
+
     if (screen === "detail") {
+      clearTransientStates();
       setScreen("items");
-      setRenameState(null);
-      setCreateState(null);
-      setDeleteState(null);
       return;
     }
 
     if (screen === "items") {
+      clearTransientStates();
       setScreen("workspace");
-      setRenameState(null);
-      setCreateState(null);
-      setDeleteState(null);
       return;
     }
 
-    setRenameState(null);
-    setCreateState(null);
-    setDeleteState(null);
+    clearTransientStates();
     setScreen("workspace");
   }
 
   function addCourse() {
     setContextMenu(null);
     setRenameState(null);
+    setDeleteState(null);
     setCreateState({
       kind: "course",
       draft: ""
     });
-    setDeleteState(null);
+    setScreenMessage(null);
   }
 
   function addItem() {
@@ -163,11 +338,12 @@ function App() {
 
     setContextMenu(null);
     setRenameState(null);
+    setDeleteState(null);
     setCreateState({
       kind: "item",
       draft: ""
     });
-    setDeleteState(null);
+    setScreenMessage(null);
   }
 
   function updateCreateDraft(draft: string) {
@@ -177,6 +353,7 @@ function App() {
   function beginRename(kind: "course" | "item", id: string) {
     setContextMenu(null);
     setCreateState(null);
+    setScreenMessage(null);
 
     if (kind === "course") {
       const target = courses.find((course) => course.id === id);
@@ -216,8 +393,8 @@ function App() {
     setCreateState(null);
   }
 
-  function submitRename() {
-    if (!renameState) {
+  async function submitRename() {
+    if (!renameState || isSubmittingRenameRef.current) {
       return;
     }
 
@@ -228,35 +405,31 @@ function App() {
       return;
     }
 
-    if (renameState.kind === "course") {
-      setCourses((current) =>
-        current.map((course) =>
-          course.id === renameState.id ? { ...course, name: nextName } : course
-        )
-      );
+    isSubmittingRenameRef.current = true;
+
+    try {
+      const nextWorkspace =
+        renameState.kind === "course"
+          ? await window.appBridge.renameCourse(renameState.id, nextName)
+          : await window.appBridge.renameItem(
+              selectedCourseId ?? "",
+              renameState.id,
+              nextName
+            );
+
+      applyWorkspace(nextWorkspace);
       setRenameState(null);
-      return;
+    } catch (error) {
+      setScreenMessage(
+        error instanceof Error ? error.message : "重命名失败，请稍后重试。"
+      );
+    } finally {
+      isSubmittingRenameRef.current = false;
     }
-
-    setCourses((current) =>
-      current.map((course) => {
-        if (course.id !== selectedCourseId) {
-          return course;
-        }
-
-        return {
-          ...course,
-          items: course.items.map((item) =>
-            item.id === renameState.id ? { ...item, name: nextName } : item
-          )
-        };
-      })
-    );
-    setRenameState(null);
   }
 
-  function submitCreate() {
-    if (!createState) {
+  async function submitCreate() {
+    if (!createState || isSubmittingCreateRef.current) {
       return;
     }
 
@@ -267,94 +440,71 @@ function App() {
       return;
     }
 
-    if (createState.kind === "course") {
-      const nextCourseId = `course-${Date.now()}`;
-      setCourses((current) => [
-        ...current,
-        {
-          id: nextCourseId,
-          name: nextName,
-          items: []
-        }
-      ]);
+    isSubmittingCreateRef.current = true;
+
+    try {
+      const nextWorkspace =
+        createState.kind === "course"
+          ? await window.appBridge.createCourse(nextName)
+          : await window.appBridge.createItem(selectedCourseId ?? "", nextName);
+
+      applyWorkspace(nextWorkspace);
       setCreateState(null);
-      return;
+    } catch (error) {
+      setScreenMessage(
+        error instanceof Error ? error.message : "创建文件夹失败，请稍后重试。"
+      );
+    } finally {
+      isSubmittingCreateRef.current = false;
     }
-
-    if (!selectedCourseId) {
-      setCreateState(null);
-      return;
-    }
-
-    setCourses((current) =>
-      current.map((course) => {
-        if (course.id !== selectedCourseId) {
-          return course;
-        }
-
-        return {
-          ...course,
-          items: [
-            ...course.items,
-            {
-              id: `item-${Date.now()}`,
-              name: nextName,
-              pipelinePreview: "New item pipeline notes will appear here."
-            }
-          ]
-        };
-      })
-    );
-    setCreateState(null);
   }
 
-  function deleteCourse(courseId: string) {
-    const target = courses.find((course) => course.id === courseId);
-    setContextMenu(null);
-    setRenameState(null);
-    setCreateState(null);
-    setDeleteState(null);
+  function requestDelete(kind: "course" | "item", id: string) {
+    if (kind === "course") {
+      const target = courses.find((course) => course.id === id);
+      if (!target) {
+        return;
+      }
 
+      setDeleteState({
+        kind,
+        id,
+        name: target.name
+      });
+      setContextMenu(null);
+      return;
+    }
+
+    const target = selectedCourse?.items.find((item) => item.id === id);
     if (!target) {
       return;
     }
 
-    setCourses((current) => current.filter((course) => course.id !== courseId));
-
-    if (selectedCourseId === courseId) {
-      setSelectedCourseId(null);
-      setSelectedItemId(null);
-      setScreen("workspace");
-    }
+    setDeleteState({
+      kind,
+      id,
+      name: target.name
+    });
+    setContextMenu(null);
   }
 
-  function deleteItem(itemId: string) {
-    const target = selectedCourse?.items.find((item) => item.id === itemId);
-    setContextMenu(null);
-    setRenameState(null);
-    setCreateState(null);
-    setDeleteState(null);
-
-    if (!target || !selectedCourseId) {
+  async function confirmDelete() {
+    if (!deleteState) {
       return;
     }
 
-    setCourses((current) =>
-      current.map((course) => {
-        if (course.id !== selectedCourseId) {
-          return course;
-        }
+    try {
+      const nextWorkspace =
+        deleteState.kind === "course"
+          ? await window.appBridge.deleteCourse(deleteState.id)
+          : await window.appBridge.deleteItem(selectedCourseId ?? "", deleteState.id);
 
-        return {
-          ...course,
-          items: course.items.filter((item) => item.id !== itemId)
-        };
-      })
-    );
-
-    if (selectedItemId === itemId) {
-      setSelectedItemId(null);
-      setScreen("items");
+      applyWorkspace(nextWorkspace);
+      setDeleteState(null);
+    } catch (error) {
+      setScreenMessage(
+        error instanceof Error ? error.message : "删除失败，请稍后重试。"
+      );
     }
   }
 
@@ -385,37 +535,12 @@ function App() {
       return;
     }
 
-    if (contextMenu.kind === "course") {
-      const target = courses.find((course) => course.id === contextMenu.id);
-      if (!target) {
-        return;
-      }
-
-      setDeleteState({
-        kind: "course",
-        id: target.id,
-        name: target.name
-      });
-      setContextMenu(null);
-      return;
-    }
-
-    const target = selectedCourse?.items.find((item) => item.id === contextMenu.id);
-    if (!target) {
-      return;
-    }
-
-    setDeleteState({
-      kind: "item",
-      id: target.id,
-      name: target.name
-    });
-    setContextMenu(null);
+    requestDelete(contextMenu.kind, contextMenu.id);
   }
 
   function handleRenameKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      submitRename();
+      void submitRename();
       return;
     }
 
@@ -426,7 +551,7 @@ function App() {
 
   function handleCreateKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      submitCreate();
+      void submitCreate();
       return;
     }
 
@@ -450,17 +575,59 @@ function App() {
     }
   }
 
-  function confirmDelete() {
-    if (!deleteState) {
+  function updateDraftField(field: keyof DetailDraft, value: string) {
+    setDetailDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextDraft = { ...current, [field]: value };
+      draftRef.current = nextDraft;
+      return nextDraft;
+    });
+
+    setSaveState("saving");
+    setScreenMessage(null);
+
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = window.setTimeout(() => {
+      void flushDraftSave();
+    }, 500);
+  }
+
+  async function handleOpenPackage() {
+    if (!selectedCourseId || !selectedItemId) {
       return;
     }
 
-    if (deleteState.kind === "course") {
-      deleteCourse(deleteState.id);
-      return;
+    try {
+      const result = await window.appBridge.openPackage(selectedCourseId, selectedItemId);
+      applyWorkspace(result.workspace);
+      setScreenMessage(`已打开文件夹：${result.packagePath}`);
+    } catch (error) {
+      setScreenMessage(
+        error instanceof Error ? error.message : "打开 Package 文件夹失败，请稍后重试。"
+      );
+    }
+  }
+
+  function getSaveLabel() {
+    if (saveState === "saving") {
+      return "Saving...";
     }
 
-    deleteItem(deleteState.id);
+    if (saveState === "saved") {
+      return "Saved";
+    }
+
+    if (saveState === "error") {
+      return "Save failed";
+    }
+
+    return "";
   }
 
   function renderWorkspace() {
@@ -487,7 +654,7 @@ function App() {
                   placeholder="Enter course name"
                   onChange={(event) => updateCreateDraft(event.target.value)}
                   onKeyDown={handleCreateKeyDown}
-                  onBlur={submitCreate}
+                  onBlur={() => void submitCreate()}
                 />
                 <span className="list-meta">new course</span>
               </div>
@@ -522,7 +689,7 @@ function App() {
                     autoFocus
                     onChange={(event) => updateRenameDraft(event.target.value)}
                     onKeyDown={handleRenameKeyDown}
-                    onBlur={submitRename}
+                    onBlur={() => void submitRename()}
                     onClick={(event) => event.stopPropagation()}
                     onFocus={(event) => event.currentTarget.select()}
                   />
@@ -545,7 +712,7 @@ function App() {
       <section className="screen-layout">
         <section className="list-pane">
           <header className="nav-bar">
-            <button className="nav-button" type="button" onClick={goBack} aria-label="Back">
+            <button className="nav-button" type="button" onClick={() => void goBack()}>
               Back
             </button>
             <p className="eyebrow">Courses</p>
@@ -567,7 +734,7 @@ function App() {
                   placeholder="Enter item name"
                   onChange={(event) => updateCreateDraft(event.target.value)}
                   onKeyDown={handleCreateKeyDown}
-                  onBlur={submitCreate}
+                  onBlur={() => void submitCreate()}
                 />
                 <span className="list-meta">new item</span>
               </div>
@@ -602,7 +769,7 @@ function App() {
                     autoFocus
                     onChange={(event) => updateRenameDraft(event.target.value)}
                     onKeyDown={handleRenameKeyDown}
-                    onBlur={submitRename}
+                    onBlur={() => void submitRename()}
                     onClick={(event) => event.stopPropagation()}
                     onFocus={(event) => event.currentTarget.select()}
                   />
@@ -625,32 +792,75 @@ function App() {
       <section className="screen-layout">
         <section className="list-pane detail-pane">
           <header className="nav-bar">
-            <button className="nav-button" type="button" onClick={goBack} aria-label="Back">
+            <button className="nav-button" type="button" onClick={() => void goBack()}>
               Back
             </button>
             <p className="eyebrow">Items</p>
           </header>
 
-          <section className="detail-block">
-            <div className="detail-block-header">
-              <p className="section-label">pipeline</p>
-              <button className="package-button" type="button">
-                package
+          <div className="detail-header">
+            <div>
+              <p className="detail-title">Pipeline</p>
+              <p className="detail-item-name">{selectedItem?.name ?? "Item"}</p>
+            </div>
+            <span className="save-indicator">{getSaveLabel()}</span>
+          </div>
+
+          <section className="detail-card">
+            <AutoGrowField
+              label="Due Date"
+              value={detailDraft?.dueDate ?? ""}
+              placeholder="Enter due date"
+              onChange={(value) => updateDraftField("dueDate", value)}
+              onCommit={() => void flushDraftSave()}
+            />
+            <AutoGrowField
+              label="Submission Link"
+              value={detailDraft?.submissionLink ?? ""}
+              placeholder="Paste submission link"
+              onChange={(value) => updateDraftField("submissionLink", value)}
+              onCommit={() => void flushDraftSave()}
+            />
+            <AutoGrowField
+              label="Others"
+              value={detailDraft?.others ?? ""}
+              placeholder="Add notes, instructions, reminders"
+              onChange={(value) => updateDraftField("others", value)}
+              onCommit={() => void flushDraftSave()}
+            />
+          </section>
+
+          <section className="detail-card">
+            <div className="detail-card-top">
+              <p className="detail-title">Package</p>
+              <button className="package-button" type="button" onClick={() => void handleOpenPackage()}>
+                Open Folder
               </button>
             </div>
-            <div className="pipeline-placeholder">
-              <p className="detail-item-name">{selectedItem?.name ?? "item"}</p>
-              <p className="pipeline-preview">
-                {selectedItem?.pipelinePreview ??
-                  "Pipeline content will live here as the main working panel for this item."}
-              </p>
-              <div className="pipeline-skeleton" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
+
+            <AutoGrowField
+              label="Material Links"
+              value={detailDraft?.materialLinks ?? ""}
+              placeholder="Paste source links or references"
+              onChange={(value) => updateDraftField("materialLinks", value)}
+              onCommit={() => void flushDraftSave()}
+            />
+
+            <button className="files-panel" type="button" onClick={() => void handleOpenPackage()}>
+              <span className="detail-field-label">Files</span>
+              <span className="files-hint">Click to open the real folder</span>
+              {selectedItem?.fileNames.length ? (
+                <div className="file-list" aria-label="Package Files">
+                  {selectedItem.fileNames.map((fileName) => (
+                    <span key={fileName} className="file-entry">
+                      {fileName}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="files-empty">Empty</span>
+              )}
+            </button>
           </section>
         </section>
 
@@ -661,9 +871,11 @@ function App() {
 
   return (
     <main className="app-shell">
-      {screen === "workspace" ? renderWorkspace() : null}
-      {screen === "items" ? renderItems() : null}
-      {screen === "detail" ? renderDetail() : null}
+      {screenMessage ? <p className="screen-message">{screenMessage}</p> : null}
+      {isLoading ? <p className="screen-message">Loading workspace...</p> : null}
+      {!isLoading && screen === "workspace" ? renderWorkspace() : null}
+      {!isLoading && screen === "items" ? renderItems() : null}
+      {!isLoading && screen === "detail" ? renderDetail() : null}
       {contextMenu ? (
         <div
           className="context-menu"
@@ -699,7 +911,7 @@ function App() {
               <button
                 className="dialog-button dialog-button-danger"
                 type="button"
-                onClick={confirmDelete}
+                onClick={() => void confirmDelete()}
               >
                 删除
               </button>
